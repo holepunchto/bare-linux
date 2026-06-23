@@ -1,0 +1,52 @@
+name: Integrate
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint
+    steps:
+      - uses: holepunchto/actions/node-base@v1
+      - run: npm run lint
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+            addon_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            addon_arch: aarch64
+    steps:
+      - uses: holepunchto/actions/node-base@v1
+      - name: Fetch the bare-kit Linux prebuild
+        run: |
+          gh release download --repo holepunchto/bare-kit v2.3.0 --pattern prebuilds.zip
+          unzip prebuilds.zip "linux/*" -d prebuilds/
+          mkdir -p app/lib
+          cp prebuilds/linux/${{ matrix.arch }}/libbare-kit.so app/lib/
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Link native addons
+        run: node_modules/.bin/bare-link --preset linux --out app/addons .
+      - name: Pack the worklet
+        run: node_modules/.bin/bare-pack --preset linux --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js
+      - name: Generate the build
+        run: node_modules/.bin/bare-make generate --platform linux --arch ${{ matrix.arch }}
+      - name: Build the host
+        run: node_modules/.bin/bare-make build
+      - name: Boot the backend and confirm an IPC frame
+        run: |
+          timeout 20 env LD_LIBRARY_PATH=app/addons/${{ matrix.addon_arch }}/lib ./build/app/bare_linux | tee out.log || true
+          grep -q "ipc frame" out.log
