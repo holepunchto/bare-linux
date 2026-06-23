@@ -1,0 +1,25 @@
+{
+  "name": "bare-linux",
+  "version": "0.0.1",
+  "description": "Example of embedding Bare in a Linux application",
+  "scripts": {
+    "format": "prettier --write . && lunte --fix",
+    "lint": "prettier --check . && lunte"
+  },
+  "author": "Holepunch",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "bare-switch-core": "^1.0.1"
+  },
+  "devDependencies": {
+    "bare-headers": "^1.29.4",
+    "bare-link": "^3.2.2",
+    "bare-make": "^1.0.0",
+    "bare-pack": "^2.1.0",
+    "cmake-bare": "^1.6.1",
+    "cmake-fetch": "^1.4.3",
+    "lunte": "^1.8.0",
+    "prettier": "^3.4.2",
+    "prettier-config-holepunch": "^2.0.0"
+  }
+}
