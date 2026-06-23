@@ -1,7 +1,10 @@
-// Phase 0 host: boot the worklet, send one message over the IPC byte channel,
-// and print the echo that comes back. This proves the native boundary - bundle
-// loading and bidirectional IPC - independent of hrpc.
+// Phase 0 host: boot the real Hyperswarm backend worklet and run it headlessly.
+// The host does no typed RPC yet - it boots the peer-to-peer node, drains the
+// IPC channel (printing each inbound hrpc frame's size), and stays alive until
+// interrupted. The worklet's own console.log lines (peer connect/disconnect,
+// public key) are the human-readable proof it is running on Linux.
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,26 +37,33 @@ read_file(const char *path) {
   return uv_buf_init(buf, (unsigned int) n);
 }
 
-static uv_sem_t got_reply;
+static uv_sem_t running;
 
-// Runs on bare-kit's IPC poll thread (its own pthread on Linux), not the main
-// thread.
+static void
+on_signal(int sig) {
+  uv_sem_post(&running);
+}
+
+// Runs on bare-kit's IPC poll thread (its own pthread on Linux). The frames are
+// hrpc-encoded events from the backend (info, peers-changed, new-state); here we
+// just report their sizes to confirm the channel is live.
 static void
 on_readable(bare_ipc_poll_t *poll, int events) {
   bare_ipc_t *ipc = bare_ipc_poll_get_ipc(poll);
 
   void *data;
   size_t len;
-  int err = bare_ipc_read(ipc, &data, &len);
-  if (err == 0) {
-    printf("echo: %.*s\n", (int) len, (char *) data);
-    uv_sem_post(&got_reply);
+  while (bare_ipc_read(ipc, &data, &len) == 0) {
+    printf("[host] ipc frame: %zu bytes\n", len);
+    fflush(stdout);
   }
 }
 
 int
 main(int argc, char **argv) {
-  uv_sem_init(&got_reply, 0);
+  uv_sem_init(&running, 0);
+  signal(SIGINT, on_signal);
+  signal(SIGTERM, on_signal);
 
   bare_worklet_t *worklet;
   bare_worklet_alloc(&worklet);
@@ -73,10 +83,10 @@ main(int argc, char **argv) {
   bare_ipc_poll_init(poll, ipc);
   bare_ipc_poll_start(poll, bare_ipc_readable, on_readable);
 
-  const char *msg = "ping";
-  bare_ipc_write(ipc, msg, strlen(msg));
+  printf("[host] worklet up; waiting for peers (Ctrl-C to stop)\n");
+  fflush(stdout);
 
-  uv_sem_wait(&got_reply);
+  uv_sem_wait(&running);
 
   bare_ipc_poll_stop(poll);
   bare_ipc_poll_destroy(poll);
