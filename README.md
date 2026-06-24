@@ -22,29 +22,17 @@ The native boundary works end to end on Linux (built and run on arm64; CI also c
 
 The build needs Linux. On an Apple Silicon Mac, run everything inside a Linux arm64 VM (a Lima Ubuntu instance with this repo mounted; `npm install` and the toolchain go inside the VM, since `node_modules` holds platform-specific native binaries). The toolchain is `build-essential` + `cmake` + `clang` (bare-make drives Clang/Ninja) + Node.
 
-From the repo root (arm64 shown; substitute `x64` / `x86_64` on an x64 host):
+From the repo root (each step auto-detects the host arch):
 
 ```sh
 npm install
-
-# Fetch the prebuilt libbare-kit.so for this arch.
-gh release download v2.3.0 --repo holepunchto/bare-kit --pattern prebuilds.zip
-unzip -o prebuilds.zip 'linux/*' -d prebuilds/
-mkdir -p app/lib && cp prebuilds/linux/arm64/libbare-kit.so app/lib/
-
-# Link the native addons and pack the worklet bundle.
-npm run link
-npm run pack
-
-# Build the C host.
-node_modules/.bin/bare-make generate --platform linux --arch arm64
-node_modules/.bin/bare-make build
-
-# Run it. Launch in two terminals to watch them find each other on the DHT.
-LD_LIBRARY_PATH=app/addons/aarch64/lib ./build/app/bare_linux
+npm run fetch    # download the prebuilt libbare-kit.so for this arch
+npm run bundle   # link the native addons + pack the worklet
+npm run build    # generate + build the C host
+npm start        # run it - launch twice to watch peers find each other on the DHT
 ```
 
-`LD_LIBRARY_PATH` is required: the linked native addons (`sodium-native`, `udx-native`, ...) are `dlopen`ed by the runtime from inside `libbare-kit.so`, so the executable's rpath does not cover them. The addon directory is named by arch (`aarch64` / `x86_64`). The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so the `[host] ipc frame: N bytes` lines are the signal that the channel is live.
+`npm start` sets `LD_LIBRARY_PATH=app/addons/<arch>/lib` because the linked native addons (`sodium-native`, `udx-native`, ...) are `dlopen`ed by the runtime from inside `libbare-kit.so`, so the executable's rpath does not cover them. The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so the `[host] ipc frame: N bytes` lines are the signal that the channel is live.
 
 ## What's next: Phase 1 (typed RPC)
 
