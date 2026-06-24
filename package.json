@@ -4,7 +4,9 @@
   "description": "Example of embedding Bare in a Linux application",
   "scripts": {
     "format": "prettier --write . && lunte --fix",
-    "lint": "prettier --check . && lunte"
+    "lint": "prettier --check . && lunte",
+    "link": "bare-link --preset linux --out app/addons .",
+    "pack": "bare-pack --preset linux --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js"
   },
   "author": "Holepunch",
   "license": "Apache-2.0",

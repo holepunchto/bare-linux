@@ -33,9 +33,8 @@ unzip -o prebuilds.zip 'linux/*' -d prebuilds/
 mkdir -p app/lib && cp prebuilds/linux/arm64/libbare-kit.so app/lib/
 
 # Link the native addons and pack the worklet bundle.
-node_modules/.bin/bare-link --preset linux --out app/addons .
-node_modules/.bin/bare-pack --preset linux --linked --base . \
-  --out app/app.bundle node_modules/bare-switch-core/backend.js
+npm run link
+npm run pack
 
 # Build the C host.
 node_modules/.bin/bare-make generate --platform linux --arch arm64

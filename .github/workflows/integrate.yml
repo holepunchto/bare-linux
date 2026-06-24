@@ -39,9 +39,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Link native addons
-        run: node_modules/.bin/bare-link --preset linux --out app/addons .
+        run: npm run link
       - name: Pack the worklet
-        run: node_modules/.bin/bare-pack --preset linux --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js
+        run: npm run pack
       - name: Generate the build
         run: node_modules/.bin/bare-make generate --platform linux --arch ${{ matrix.arch }}
       - name: Build the host
