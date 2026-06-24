@@ -6,11 +6,11 @@
     "format": "prettier --write . && lunte --fix",
     "lint": "prettier --check . && lunte",
     "fetch": "curl -fsSL https://github.com/holepunchto/bare-kit/releases/download/v2.3.0/prebuilds.zip -o prebuilds.zip && unzip -o prebuilds.zip 'linux/*' -d prebuilds/ && mkdir -p app/lib && cp prebuilds/linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')/libbare-kit.so app/lib/",
-    "link": "bare-link --preset linux --out app/addons .",
-    "pack": "bare-pack --preset linux --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js",
+    "link": "bare-link --out app/addons .",
+    "pack": "bare-pack --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js",
     "bundle": "npm run link && npm run pack",
     "build": "bare-make generate && bare-make build",
-    "start": "LD_LIBRARY_PATH=app/addons/$(uname -m)/lib ./build/app/bare_linux"
+    "start": "LD_LIBRARY_PATH=app/addons/lib ./build/app/bare_linux"
   },
   "author": "Holepunch",
   "license": "Apache-2.0",
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "bare-headers": "^1.29.4",
-    "bare-link": "^3.2.2",
+    "bare-link": "^3.3.0",
     "bare-make": "^1.0.0",
     "bare-pack": "^2.1.0",
     "cmake-bare": "^1.6.1",
