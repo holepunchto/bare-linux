@@ -31,6 +31,13 @@ enum {
   bare_ipc_writable = 0x2,
 };
 
+// Negative returns from bare_ipc_read / bare_ipc_write; a 0 return is a
+// successful read (a 0-length read meaning EOF).
+enum {
+  bare_ipc_would_block = -1,
+  bare_ipc_error = -2,
+};
+
 int
 bare_worklet_alloc(bare_worklet_t **result);
 

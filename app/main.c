@@ -1,8 +1,8 @@
 // Phase 0 host: boot the real Hyperswarm backend worklet and run it headlessly.
 // The host does no typed RPC yet - it boots the peer-to-peer node, drains the
-// IPC channel (printing each inbound hrpc frame's size), and stays alive until
-// interrupted. The worklet's own console.log lines (peer connect/disconnect,
-// public key) are the human-readable proof it is running on Linux.
+// IPC channel, and stays alive until interrupted. Each inbound hrpc frame's size
+// is printed; those "[host] ipc frame" lines are the proof the channel is live
+// and peers are syncing (the worklet's own console.log does not surface here).
 
 #include <signal.h>
 #include <stdio.h>
@@ -25,7 +25,17 @@ read_file(const char *path) {
   long n = ftell(f);
   fseek(f, 0, SEEK_SET);
 
+  if (n < 0) {
+    fprintf(stderr, "cannot size %s\n", path);
+    exit(1);
+  }
+
   char *buf = malloc(n);
+  if (buf == NULL) {
+    fprintf(stderr, "out of memory reading %s\n", path);
+    exit(1);
+  }
+
   size_t read = fread(buf, 1, n, f);
   fclose(f);
 
@@ -41,7 +51,7 @@ static uv_sem_t running;
 
 static void
 on_signal(int sig) {
-  uv_sem_post(&running);
+  uv_sem_post(&running); // sem_post is async-signal-safe
 }
 
 // Runs on bare-kit's IPC poll thread (its own pthread on Linux). The frames are
@@ -51,9 +61,18 @@ static void
 on_readable(bare_ipc_poll_t *poll, int events) {
   bare_ipc_t *ipc = bare_ipc_poll_get_ipc(poll);
 
-  void *data;
-  size_t len;
-  while (bare_ipc_read(ipc, &data, &len) == 0) {
+  // Drain everything currently readable. bare_ipc_read returns 0 on a successful
+  // read - including a zero-length read at EOF - and bare_ipc_would_block (no
+  // more data) or bare_ipc_error otherwise. A zero-length frame therefore means
+  // the worklet closed its end, so we trigger an orderly shutdown.
+  while (1) {
+    void *data;
+    size_t len;
+    if (bare_ipc_read(ipc, &data, &len) != 0) break;
+    if (len == 0) {
+      uv_sem_post(&running);
+      break;
+    }
     printf("[host] ipc frame: %zu bytes\n", len);
     fflush(stdout);
   }
@@ -88,8 +107,7 @@ main(int argc, char **argv) {
 
   uv_sem_wait(&running);
 
-  bare_ipc_poll_stop(poll);
-  bare_ipc_poll_destroy(poll);
+  bare_ipc_poll_destroy(poll); // also stops the poll thread and joins it
   bare_ipc_destroy(ipc);
   bare_worklet_terminate(worklet);
   bare_worklet_destroy(worklet);
