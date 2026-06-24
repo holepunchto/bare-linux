@@ -36,5 +36,6 @@ jobs:
         run: npm run build
       - name: Boot the backend and confirm an IPC frame
         run: |
+          rm -f out.log
           timeout 20 env LD_LIBRARY_PATH=app/addons/lib ./build/app/bare_linux | tee out.log || true
           grep -q "ipc frame" out.log

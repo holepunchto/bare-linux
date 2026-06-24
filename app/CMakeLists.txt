@@ -23,7 +23,7 @@ target_link_libraries(
 # runtime without LD_LIBRARY_PATH. The linked native addons (sodium-native,
 # udx-native, ...) are different: the runtime dlopens them by soname from inside
 # libbare-kit.so, so the executable's rpath does not cover them - run with
-# LD_LIBRARY_PATH=app/addons/<arch>/lib instead (see README).
+# LD_LIBRARY_PATH=app/addons/lib instead (see README).
 set_target_properties(
   bare_linux
   PROPERTIES
