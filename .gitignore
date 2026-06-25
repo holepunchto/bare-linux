@@ -1,9 +1,11 @@
 node_modules/
 package-lock.json
+docs/
 .cache/
 build/
 coverage/
 prebuilds/
+prebuilds.zip
 app/app.bundle
 app/lib/*.so
 app/addons/

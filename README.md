@@ -4,7 +4,7 @@ An example Linux app that embeds the Bare runtime via bare-kit to run the same p
 
 ## Continuing this work (session handoff)
 
-This README is the entry point for picking the work up in a fresh session. The implementation plan is at [`docs/plans/2026-06-10-bare-linux.md`](docs/plans/2026-06-10-bare-linux.md); read this status first, since both the plan's "Dependency reality" table and its Task 0.3 (which assumed the JS was vendored from bare-macos) are out of date.
+This README is the entry point for picking the work up in a fresh session - read the status below first.
 
 ### Status as of 2026-06-23: Phase 0 is complete
 
