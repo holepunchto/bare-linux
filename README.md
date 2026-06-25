@@ -4,7 +4,7 @@ An example Linux app that embeds the Bare runtime via bare-kit to run the same p
 
 ## Building and running
 
-The build needs Linux. On an Apple Silicon Mac, run everything inside a Linux arm64 VM (a Lima Ubuntu instance with this repo mounted; `npm install` and the toolchain go inside the VM, since `node_modules` holds platform-specific native binaries). The toolchain is `build-essential` + `cmake` + `clang` (bare-make drives Clang/Ninja) + Node.
+The build needs Linux, so on a Mac you need a Linux environment - a remote Linux host, a local VM (Lima, UTM, Multipass, ...), or a container all work. One option that worked well is a Lima Ubuntu arm64 VM with this repo mounted. Whichever you choose, run `npm install` and the build inside it, since `node_modules` holds platform-specific native binaries. The toolchain is `build-essential` + `cmake` + `clang` (bare-make drives Clang/Ninja) + Node.
 
 From the repo root (each step auto-detects the host arch):
 
