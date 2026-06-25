@@ -32,6 +32,8 @@ npm run build    # generate + build the C host
 npm start        # run it - launch twice to watch peers find each other on the DHT
 ```
 
+To verify a build non-interactively, `npm run smoke` boots the host, confirms an IPC frame arrives, and exits non-zero if none does - this is exactly what CI runs.
+
 `npm start` sets `LD_LIBRARY_PATH=app/addons/lib` because the linked native addons (`sodium-native`, `udx-native`, ...) are `dlopen`ed by the runtime from inside `libbare-kit.so`, so the executable's rpath does not cover them. The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so the `[host] ipc frame: N bytes` lines are the signal that the channel is live.
 
 ## What's next: Phase 1 (typed RPC)
