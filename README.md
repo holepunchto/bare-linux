@@ -19,3 +19,28 @@ npm start        # run it - launch twice to watch peers find each other on the D
 To verify a build non-interactively, `npm run smoke` boots the host, confirms an IPC frame arrives, and exits non-zero if none does - this is exactly what CI runs.
 
 `npm start` sets `LD_LIBRARY_PATH=app/addons/lib` because the linked native addons (`sodium-native`, `udx-native`, ...) are `dlopen`ed by the runtime from inside `libbare-kit.so`, so the executable's rpath does not cover them. The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so the `[host] ipc frame: N bytes` lines are the signal that the channel is live.
+
+### Example: a Lima VM on an Apple Silicon Mac
+
+The exact setup that worked for us - a Lima Ubuntu arm64 VM with this repo mounted, so you edit on the Mac and build inside the VM at native speed. Run these from the repo root:
+
+```sh
+# 1. Install Lima.
+brew install lima
+
+# 2. Start an Ubuntu arm64 VM with this repo mounted writable.
+limactl start --name=bare --vm-type=vz --mount="$PWD:w" template:ubuntu-lts
+
+# 3. Install the toolchain inside the VM.
+limactl shell bare sudo apt-get update
+limactl shell bare sudo apt-get install -y build-essential cmake clang curl unzip
+limactl shell bare bash -lc 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs'
+
+# 4. Open a shell in the VM - it lands in this same mounted path - and build.
+limactl shell bare
+npm install
+npm run fetch && npm run bundle && npm run build
+npm start
+```
+
+`--vm-type=vz` uses Apple's Virtualization framework so the arm64 guest runs at native speed; `--mount="$PWD:w"` mounts the repo writable at the same path inside the guest. Run `npm install` inside the VM (not on the Mac) so `node_modules` gets Linux binaries.
