@@ -10,7 +10,7 @@
     "pack": "bare-pack --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js",
     "bundle": "npm run link && npm run pack",
     "build": "bare-make generate && bare-make build",
-    "start": "LD_LIBRARY_PATH=app/addons/lib ./build/app/bare_linux",
+    "start": "./build/app/bare_linux",
     "smoke": "timeout 15 npm start | grep -q 'ipc frame'"
   },
   "author": "Holepunch",

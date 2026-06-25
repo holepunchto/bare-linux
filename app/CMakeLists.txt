@@ -19,13 +19,15 @@ target_link_libraries(
     ${CMAKE_SOURCE_DIR}/app/lib/libbare-kit.so
 )
 
-# BUILD_RPATH lets the loader find libbare-kit.so (a link-time dependency) at
-# runtime without LD_LIBRARY_PATH. The linked native addons (sodium-native,
-# udx-native, ...) are different: the runtime dlopens them by soname from inside
-# libbare-kit.so, so the executable's rpath does not cover them - run with
-# LD_LIBRARY_PATH=app/addons/lib instead (see README).
+# Let the loader find libbare-kit.so (a link-time dependency) and the linked
+# native addons (sodium-native, udx-native, ...) at runtime without
+# LD_LIBRARY_PATH. The addons are dlopened by soname from inside libbare-kit.so,
+# and dlopen only searches DT_RPATH (not the modern DT_RUNPATH), so we force the
+# old tag with --disable-new-dtags.
 set_target_properties(
   bare_linux
   PROPERTIES
-    BUILD_RPATH ${CMAKE_SOURCE_DIR}/app/lib
+    BUILD_RPATH "${CMAKE_SOURCE_DIR}/app/lib;${CMAKE_SOURCE_DIR}/app/addons/lib"
 )
+
+target_link_options(bare_linux PRIVATE -Wl,--disable-new-dtags)
