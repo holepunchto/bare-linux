@@ -8,7 +8,7 @@ The peer-to-peer half is JavaScript - a Hyperswarm node plus the switch state - 
 
 ### Prerequisites
 
-- A Linux machine. On a Mac, use a Linux environment instead - a remote Linux host, a local VM (Lima, UTM, Multipass, ...), or a container. A worked example using Lima is below.
+- A Linux machine on x64 or arm64 (glibc) - the prebuilt runtime is published for those. On a Mac, use a Linux environment instead - a remote host, a local VM (Lima, UTM, Multipass, ...), or a container. A worked example using Lima is below.
 - Node 22+.
 - A C toolchain - `build-essential`, `cmake`, and `clang` - plus `curl` and `unzip` (used to fetch the prebuilt runtime). `bare-make` brings its own Ninja, so you do not install that.
 
@@ -23,37 +23,29 @@ npm install
 npm run fetch    # download the prebuilt libbare-kit.so for this arch
 npm run bundle   # link the native addons + pack the worklet
 npm run build    # generate + build the C host
-npm start        # run it
+npm start        # run it (Ctrl-C to stop)
 ```
 
-On start the host prints `[host] worklet up ...` followed by an `[host] ipc frame: N bytes` line (the worklet's initial state). Launch a second copy in another terminal; once the two find each other on the DHT, each prints more `ipc frame` lines - that is the instances syncing the switch. The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so these `[host] ...` lines are how you know the channel is live.
+On start the host prints `[host] worklet up ...` followed by an `[host] ipc frame: N bytes` line (the worklet's initial state). Launch a second copy in another terminal; once the two find each other on the DHT - usually within a minute - each prints more `ipc frame` lines - that is the instances syncing the switch. The worklet's own `console.log` does not surface on the host's stdout in this bare-kit build, so these `[host] ...` lines are how you know the channel is live.
 
 To check a build non-interactively, `npm run smoke` boots the host, confirms an IPC frame arrives, and exits non-zero if none does - this is exactly what CI runs.
 
 ### Example: a Lima VM on an Apple Silicon Mac
 
-The exact setup that worked for us - a Lima Ubuntu arm64 VM with this repo mounted, so you edit on the Mac and build inside the VM at native speed. Run these from the repo root:
+The setup that worked for us - a Lima Ubuntu arm64 VM with this repo mounted, so you edit on the Mac and build inside the VM at native speed:
 
 ```sh
-# 1. Install Lima.
+# Install Lima and start an Ubuntu arm64 VM with this repo mounted writable.
 brew install lima
-
-# 2. Start an Ubuntu arm64 VM with this repo mounted writable.
 limactl start --name=bare --vm-type=vz --mount="$PWD:w" template:ubuntu-lts
 
-# 3. Install the toolchain inside the VM.
+# Install the toolchain inside the VM.
 limactl shell bare sudo apt-get update
 limactl shell bare sudo apt-get install -y build-essential cmake clang curl unzip
 limactl shell bare bash -lc 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs'
-
-# 4. Open a shell in the VM - it lands in this same mounted path - and build.
-limactl shell bare
-npm install
-npm run fetch && npm run bundle && npm run build
-npm start
 ```
 
-`--vm-type=vz` uses Apple's Virtualization framework so the arm64 guest runs at native speed; `--mount="$PWD:w"` mounts the repo writable at the same path inside the guest.
+Then open a shell in the VM - `limactl shell bare`, which lands in this same mounted path - and run the [Build](#build) steps above. `--vm-type=vz` uses Apple's Virtualization framework so the arm64 guest runs at native speed; `--mount="$PWD:w"` mounts the repo writable at the same path inside the guest.
 
 ## How it works
 
