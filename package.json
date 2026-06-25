@@ -5,7 +5,7 @@
   "scripts": {
     "format": "prettier --write . && lunte --fix",
     "lint": "prettier --check . && lunte",
-    "fetch": "curl -fsSL https://github.com/holepunchto/bare-kit/releases/download/v2.3.0/prebuilds.zip -o prebuilds.zip && unzip -o prebuilds.zip 'linux/*' -d prebuilds/ && mkdir -p app/lib && cp prebuilds/linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')/libbare-kit.so app/lib/",
+    "fetch": "curl -fsSL https://github.com/holepunchto/bare-kit/releases/download/v2.3.0/prebuilds.zip -o prebuilds.zip && mkdir -p app/lib && unzip -o -j prebuilds.zip linux/$(node -p process.arch)/libbare-kit.so -d app/lib",
     "link": "bare-link --out app/addons .",
     "pack": "bare-pack --linked --base . --out app/app.bundle node_modules/bare-switch-core/backend.js",
     "bundle": "npm run link && npm run pack",
