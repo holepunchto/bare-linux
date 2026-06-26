@@ -4,8 +4,3 @@ docs/
 .cache/
 build/
 coverage/
-prebuilds/
-prebuilds.zip
-app/app.bundle
-app/lib/*.so
-app/addons/
