@@ -15,24 +15,20 @@ jobs:
     steps:
       - uses: holepunchto/actions/node-base@v1
       - run: npm run lint
-  build:
-    name: Build (${{ matrix.label }})
-    runs-on: ${{ matrix.runner }}
+  test:
     strategy:
-      fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
-            label: x64
-          - runner: ubuntu-24.04-arm
-            label: arm64
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    name: Test / ${{ matrix.platform }}-${{ matrix.arch }}
     steps:
-      - uses: holepunchto/actions/node-base@v1
-      - name: Fetch the bare-kit Linux prebuild
-        run: npm run fetch
-      - name: Link addons and pack the worklet
-        run: npm run bundle
-      - name: Build the host
-        run: npm run build
-      - name: Boot the backend and confirm an IPC frame
-        run: npm run smoke
+      - uses: holepunchto/actions/bare-base@v1
+      - run: npx bare-make generate
+      - run: npx bare-make build
+      - run: npx bare-make test
