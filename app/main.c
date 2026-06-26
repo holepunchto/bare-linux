@@ -90,7 +90,7 @@ main(int argc, char **argv) {
   bare_worklet_options_t options = {0};
   bare_worklet_init(worklet, &options);
 
-  uv_buf_t source = read_file("app/app.bundle");
+  uv_buf_t source = read_file(BUNDLE_PATH);
   bare_worklet_start(worklet, "/app.bundle", &source, 0, NULL);
 
   bare_ipc_t *ipc;
