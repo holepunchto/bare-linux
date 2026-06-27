@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+docs/
+.cache/
+build/
+coverage/
