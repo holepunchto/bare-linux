@@ -13,15 +13,10 @@ target_include_directories(
     "${bare_headers}/include"
 )
 
-# The generated typed RPC for talking to the worklet: sync_hrpc (commands) over
-# sync_schema (struct codecs). Both are pure CMake OBJECT libraries, and an
-# OBJECT library's files reached only transitively through another OBJECT library
-# are not pulled into the final executable - so list them directly rather than
-# relying on sync_hrpc's PUBLIC interface to carry sync_schema. Their rpc/compact/
-# utf dependencies come through rpc_static, whose STATIC-archive interface does
-# propagate transitively (so a future librpc dependency flows through with no
-# edit here). Linking now proves the generated C builds in the host; main.c
-# starts using it in the next step.
+# sync_hrpc/sync_schema are OBJECT libraries; objects reached only transitively
+# through another OBJECT library aren't pulled into the executable, so link both
+# directly. Their rpc/compact/utf deps come via rpc_static, whose static-archive
+# interface does propagate.
 target_link_libraries(
   bare_linux
   PRIVATE
