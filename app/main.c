@@ -1,15 +1,16 @@
 // Phase 1 host: boot the Hyperswarm backend worklet and talk to it over typed
-// RPC. On startup it sends one `set-state` request (switch on) and prints the
-// worklet's authoritative reply, decoded from the generated hrpc codec. librpc's
-// rpc_client_t allocates the request id, routes the matching reply back to our
-// callback, and reassembles frames off the IPC byte stream. The host then stays
-// alive headless until interrupted; inbound events (info, peers-changed,
-// new-state) arrive on the fallthrough and are decoded by sync_hrpc_dispatch.
+// RPC. Reads `on`/`off` from stdin and sends a `set-state` request per line,
+// printing the worklet's authoritative reply decoded from the generated hrpc
+// codec. librpc's rpc_client_t allocates the request id, routes the matching
+// reply back to our callback, and reassembles frames off the IPC byte stream.
+// Inbound events (info, peers-changed, new-state) arrive on the fallthrough and
+// are decoded by sync_hrpc_dispatch.
 
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <uv.h>
 
 #include <rpc.h>
@@ -56,6 +57,11 @@ read_file(const char *path) {
 static uv_sem_t running;
 static rpc_client_t client;
 
+// Guards rpc_client_t, which is not thread-safe: the stdin loop (next_id/track)
+// and the poll thread (rpc_client_read) both touch it. Callbacks fire under the
+// lock but never re-enter the client, so there is no re-entrancy.
+static uv_mutex_t client_lock;
+
 static void
 on_signal(int sig) {
   uv_sem_post(&running); // sem_post is async-signal-safe
@@ -77,6 +83,38 @@ on_set_state_reply(void *data, const rpc_message_t *msg) {
     printf("[host] set-state reply decode failed (%d)\n", r);
   }
   fflush(stdout);
+}
+
+// Send one set-state request and track its reply by id. Called from the stdin
+// loop while the poll thread runs, so the client touches are locked. The reply
+// can only arrive after the worklet sees this write, so tracking before the
+// write is enough to catch it.
+static void
+send_set_state(bare_ipc_t *ipc, bool on) {
+  uv_mutex_lock(&client_lock);
+  uint64_t id = rpc_client_next_id(&client);
+  uv_mutex_unlock(&client_lock);
+
+  sync_switch_state_t want = {.on = on};
+  uint8_t *request;
+  size_t request_len;
+  if (sync_encode_set_state(id, &want, &request, &request_len) < 0) {
+    fprintf(stderr, "encode set-state failed\n");
+    return;
+  }
+
+  uv_mutex_lock(&client_lock);
+  rpc_client_track(&client, id, on_set_state_reply, NULL);
+  uv_mutex_unlock(&client_lock);
+
+  // A short or failed write leaves a partial frame in the pipe, desyncing every
+  // later frame, and the tracked reply never comes. Unrecoverable, so fatal.
+  int written = bare_ipc_write(ipc, request, request_len);
+  free(request);
+  if (written < 0 || (size_t) written != request_len) {
+    fprintf(stderr, "set-state write failed (%d of %zu bytes)\n", written, request_len);
+    exit(1);
+  }
 }
 
 // The worklet's send-only events, decoded by sync_hrpc_dispatch. The decoded
@@ -142,15 +180,23 @@ on_readable(bare_ipc_poll_t *poll, int events) {
       uv_sem_post(&running);
       break;
     }
+    uv_mutex_lock(&client_lock);
     rpc_client_read(&client, data, len);
+    uv_mutex_unlock(&client_lock);
   }
 }
 
 int
 main(int argc, char **argv) {
   uv_sem_init(&running, 0);
-  signal(SIGINT, on_signal);
-  signal(SIGTERM, on_signal);
+  uv_mutex_init(&client_lock);
+
+  // No SA_RESTART, so a signal interrupts the blocking fgets below instead of
+  // restarting it. uv_sem_wait retries EINTR on its own, so it stays correct.
+  struct sigaction sa = {0};
+  sa.sa_handler = on_signal;
+  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGTERM, &sa, NULL);
 
   bare_worklet_t *worklet;
   bare_worklet_alloc(&worklet);
@@ -167,43 +213,30 @@ main(int argc, char **argv) {
 
   rpc_client_init(&client, on_event, NULL);
 
-  // Ask the worklet to switch on, and track the reply by id. This runs before
-  // the poll thread starts, so the client is only ever touched from one thread:
-  // here now, and the poll thread afterwards.
-  uint64_t id = rpc_client_next_id(&client);
-  sync_switch_state_t want = {.on = true};
-  uint8_t *request;
-  size_t request_len;
-  int err = sync_encode_set_state(id, &want, &request, &request_len);
-  if (err < 0) {
-    fprintf(stderr, "encode set-state failed (%d)\n", err);
-    exit(1);
-  }
-  rpc_client_track(&client, id, on_set_state_reply, NULL);
-
-  // The whole round-trip hinges on this one write landing whole; a short or
-  // failed write means the worklet never sees the request and the host would
-  // hang waiting for a reply that never comes, so treat it as fatal.
-  int written = bare_ipc_write(ipc, request, request_len);
-  free(request);
-  if (written < 0 || (size_t) written != request_len) {
-    fprintf(stderr, "set-state write failed (%d of %zu bytes)\n", written, request_len);
-    exit(1);
-  }
-
   bare_ipc_poll_t *poll;
   bare_ipc_poll_alloc(&poll);
   bare_ipc_poll_init(poll, ipc);
   bare_ipc_poll_start(poll, bare_ipc_readable, on_readable);
 
-  printf("[host] worklet up; sent set-state (Ctrl-C to stop)\n");
+  printf("[host] worklet up; type 'on' or 'off' (Ctrl-D or Ctrl-C to stop)\n");
   fflush(stdout);
 
+  // One set-state per stdin line. fgets returns NULL on EOF or on a signal
+  // (handlers above don't restart it), which ends the loop.
+  char line[64];
+  while (fgets(line, sizeof line, stdin) != NULL) {
+    if (strcmp(line, "on\n") == 0) send_set_state(ipc, true);
+    else if (strcmp(line, "off\n") == 0) send_set_state(ipc, false);
+    else fprintf(stderr, "unknown command (type 'on' or 'off')\n");
+  }
+
+  // stdin closed; stay up as a peer until interrupted.
   uv_sem_wait(&running);
 
   bare_ipc_poll_destroy(poll); // also stops the poll thread and joins it
   bare_ipc_destroy(ipc);
   rpc_client_destroy(&client);
+  uv_mutex_destroy(&client_lock);
   bare_worklet_terminate(worklet);
   bare_worklet_destroy(worklet);
   free(source.base);
