@@ -143,8 +143,16 @@ main(int argc, char **argv) {
     exit(1);
   }
   rpc_client_track(&client, id, on_set_state_reply, NULL);
-  bare_ipc_write(ipc, request, request_len);
+
+  // The whole round-trip hinges on this one write landing whole; a short or
+  // failed write means the worklet never sees the request and the host would
+  // hang waiting for a reply that never comes, so treat it as fatal.
+  int written = bare_ipc_write(ipc, request, request_len);
   free(request);
+  if (written < 0 || (size_t) written != request_len) {
+    fprintf(stderr, "set-state write failed (%d of %zu bytes)\n", written, request_len);
+    exit(1);
+  }
 
   bare_ipc_poll_t *poll;
   bare_ipc_poll_alloc(&poll);
