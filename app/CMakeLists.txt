@@ -42,9 +42,10 @@ target_compile_definitions(bare_linux PRIVATE BUNDLE_PATH="${CMAKE_BINARY_DIR}/a
 
 add_dependencies(bare_linux app_bundle)
 
-# Smoke test: boot the host and confirm it emits an IPC frame. The node has no
-# self-exit, so bound it with a timeout; the frame is the pass signal.
+# Smoke test: boot the host, send a set-state request, and confirm the worklet's
+# typed reply decodes to the authoritative state. The node has no self-exit, so
+# bound it with a timeout; the decoded reply line is the pass signal.
 add_test(
   NAME boot
-  COMMAND sh -c "timeout 15 $<TARGET_FILE:bare_linux> | grep -q 'ipc frame'"
+  COMMAND sh -c "timeout 15 $<TARGET_FILE:bare_linux> | grep -q 'set-state reply: switch is on'"
 )
