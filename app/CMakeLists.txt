@@ -14,21 +14,21 @@ target_include_directories(
 )
 
 # The generated typed RPC for talking to the worklet: sync_hrpc (commands) over
-# sync_schema (struct codecs), on rpc + compact + utf. Every one of these is a
-# CMake OBJECT library, and an OBJECT library's files reached only transitively
-# through another OBJECT library are not pulled into the final executable - so
-# link the whole graph directly here rather than relying on the generated
-# targets' PUBLIC interfaces. Linking them now proves the generated C builds in
-# the host; main.c starts using it in the next step.
+# sync_schema (struct codecs). Both are pure CMake OBJECT libraries, and an
+# OBJECT library's files reached only transitively through another OBJECT library
+# are not pulled into the final executable - so list them directly rather than
+# relying on sync_hrpc's PUBLIC interface to carry sync_schema. Their rpc/compact/
+# utf dependencies come through rpc_static, whose STATIC-archive interface does
+# propagate transitively (so a future librpc dependency flows through with no
+# edit here). Linking now proves the generated C builds in the host; main.c
+# starts using it in the next step.
 target_link_libraries(
   bare_linux
   PRIVATE
     "${CMAKE_BINARY_DIR}/app/lib/libbare-kit.so"
     sync_hrpc
     sync_schema
-    rpc
-    compact
-    utf
+    rpc_static
 )
 
 # Resolve libbare-kit.so and the dlopened native addons from ./lib next to the

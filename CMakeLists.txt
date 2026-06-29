@@ -44,7 +44,9 @@ add_bare_bundle(app_bundle
 # The typed RPC layer the host uses to talk to the worklet. The sync protocol's
 # generated C ships in bare-switch-core's spec/; librpc provides the `rpc` target
 # it links against and transitively fetches libcompact (the `compact` target).
-fetch_package("github:holepunchto/librpc")
+# Pinned to a commit (like bare-kit above) for reproducible builds; librpc has no
+# release tags yet - switch to "@<version>" once it cuts one.
+fetch_package("github:holepunchto/librpc#38deb71de4a4d85f11f6f607478a70e9664437e3")
 
 resolve_node_module(bare-switch-core switch_core WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
