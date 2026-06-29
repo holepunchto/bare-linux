@@ -4,7 +4,7 @@
 // rpc_client_t allocates the request id, routes the matching reply back to our
 // callback, and reassembles frames off the IPC byte stream. The host then stays
 // alive headless until interrupted; inbound events (info, peers-changed,
-// new-state) arrive on the fallthrough and are reported but not yet decoded.
+// new-state) arrive on the fallthrough and are decoded by sync_hrpc_dispatch.
 
 #include <signal.h>
 #include <stdbool.h>
@@ -79,13 +79,50 @@ on_set_state_reply(void *data, const rpc_message_t *msg) {
   fflush(stdout);
 }
 
-// Fallthrough for frames not matched to a pending request: the worklet's
-// send-only events. Decoding them is the next step; for now just report them so
-// the channel stays observable.
+// The worklet's send-only events, decoded by sync_hrpc_dispatch. The decoded
+// views borrow from the inbound frame, so print now.
+static void
+on_new_state(void *ctx, const sync_switch_state_t *state) {
+  printf("[host] new-state: switch is %s\n", state->on ? "on" : "off");
+  fflush(stdout);
+}
+
+static void
+on_peers_changed(void *ctx, const sync_peers_t *peers) {
+  printf("[host] peers: %llu\n", (unsigned long long) peers->count);
+  fflush(stdout);
+}
+
+static void
+on_info(void *ctx, const sync_identity_t *id) {
+  printf(
+    "[host] info: key %.*s topic %.*s\n",
+    (int) id->public_key.len,
+    id->public_key.data,
+    (int) id->topic.len,
+    id->topic.data
+  );
+  fflush(stdout);
+}
+
+// Fallthrough for frames not matched to a pending request. Dispatch decodes the
+// known events and calls the matching handler above; anything else is raw.
 static void
 on_event(void *data, const rpc_message_t *msg) {
-  printf("[host] event (command %llu)\n", (unsigned long long) msg->command);
-  fflush(stdout);
+  sync_hrpc_handlers_t handlers = {
+    .on_new_state = on_new_state,
+    .on_peers_changed = on_peers_changed,
+    .on_info = on_info,
+  };
+
+  // We register no request handlers, so dispatch only ever decodes an event
+  // (no reply) or fails; it never writes the reply out-params here.
+  uint8_t *reply = NULL;
+  size_t reply_len = 0;
+  if (sync_hrpc_dispatch(&handlers, msg, &reply, &reply_len) < 0) {
+    printf("[host] unhandled frame (command %llu)\n", (unsigned long long) msg->command);
+    fflush(stdout);
+  }
 }
 
 // Runs on bare-kit's IPC poll thread (its own pthread on Linux). Drains the
