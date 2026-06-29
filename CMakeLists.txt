@@ -41,4 +41,16 @@ add_bare_bundle(app_bundle
   LINKED
 )
 
+# The typed RPC layer the host uses to talk to the worklet. The sync protocol's
+# generated C ships in bare-switch-core's spec/; librpc provides the `rpc` target
+# it links against and transitively fetches libcompact (the `compact` target).
+fetch_package("github:holepunchto/librpc")
+
+resolve_node_module(bare-switch-core switch_core WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+# Schema structs first (target sync_schema, needs compact), then the hrpc layer
+# (target sync_hrpc, needs compact, rpc, sync_schema).
+add_subdirectory("${switch_core}/spec/schema" "${CMAKE_BINARY_DIR}/spec/schema")
+add_subdirectory("${switch_core}/spec/hrpc" "${CMAKE_BINARY_DIR}/spec/hrpc")
+
 add_subdirectory(app)
