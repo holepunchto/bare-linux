@@ -13,10 +13,17 @@ target_include_directories(
     "${bare_headers}/include"
 )
 
+# sync_hrpc/sync_schema are OBJECT libraries; objects reached only transitively
+# through another OBJECT library aren't pulled into the executable, so link both
+# directly. Their rpc/compact/utf deps come via rpc_static, whose static-archive
+# interface does propagate.
 target_link_libraries(
   bare_linux
   PRIVATE
     "${CMAKE_BINARY_DIR}/app/lib/libbare-kit.so"
+    sync_hrpc
+    sync_schema
+    rpc_static
 )
 
 # Resolve libbare-kit.so and the dlopened native addons from ./lib next to the

@@ -41,4 +41,14 @@ add_bare_bundle(app_bundle
   LINKED
 )
 
+# Typed RPC: librpc provides the `rpc` target and transitively fetches libcompact.
+# Pinned to a short hash (native libraries aren't release-tagged).
+fetch_package("github:holepunchto/librpc#38deb71")
+
+resolve_node_module(bare-switch-core switch_core WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+# schema before hrpc: hrpc's sync_schema target must exist first.
+add_subdirectory("${switch_core}/spec/schema" "${CMAKE_BINARY_DIR}/spec/schema")
+add_subdirectory("${switch_core}/spec/hrpc" "${CMAKE_BINARY_DIR}/spec/hrpc")
+
 add_subdirectory(app)

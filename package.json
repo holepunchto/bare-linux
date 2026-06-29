@@ -9,7 +9,7 @@
   "author": "Holepunch",
   "license": "Apache-2.0",
   "dependencies": {
-    "bare-switch-core": "^1.0.1"
+    "bare-switch-core": "^1.1.0"
   },
   "devDependencies": {
     "bare-headers": "^1.29.4",
