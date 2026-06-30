@@ -1,16 +1,14 @@
-// Phase 1 host: boot the Hyperswarm backend worklet and talk to it over typed
-// RPC. Reads `on`/`off` from stdin and sends a `set-state` request per line,
-// printing the worklet's authoritative reply decoded from the generated hrpc
-// codec. librpc's rpc_client_t allocates the request id, routes the matching
-// reply back to our callback, and reassembles frames off the IPC byte stream.
-// Inbound events (info, peers-changed, new-state) arrive on the fallthrough and
-// are decoded by sync_hrpc_dispatch.
+// Phase 2 host: a GTK4 window over the Hyperswarm backend worklet. On startup it
+// boots the worklet and runs the typed-RPC client on bare-kit's IPC poll thread,
+// the same as the headless host; the GTK main loop now owns the main thread.
+// This skeleton shows a static window (toggle, peer count, key, topic). Binding
+// the widgets to the worklet's events and the toggle to set-state comes next, so
+// for now the events are still logged to stdout.
 
-#include <signal.h>
+#include <gtk/gtk.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <uv.h>
 
 #include <rpc.h>
@@ -18,6 +16,17 @@
 #include <sync_hrpc.h>
 
 #include "bare-kit.h"
+
+static bare_worklet_t *worklet;
+static bare_ipc_t *ipc;
+static bare_ipc_poll_t *ipc_poll;
+static uv_buf_t source;
+
+static rpc_client_t client;
+
+// Guards rpc_client_t, which is not thread-safe. The poll thread reads frames
+// into it; once the toggle can send, the main thread will touch it too.
+static uv_mutex_t client_lock;
 
 // Read the packed worklet bundle into memory; bare_worklet_start takes its bytes.
 static uv_buf_t
@@ -54,71 +63,8 @@ read_file(const char *path) {
   return uv_buf_init(buf, (unsigned int) n);
 }
 
-static uv_sem_t running;
-static rpc_client_t client;
-
-// Guards rpc_client_t, which is not thread-safe: the stdin loop (next_id/track)
-// and the poll thread (rpc_client_read) both touch it. Callbacks fire under the
-// lock but never re-enter the client, so there is no re-entrancy.
-static uv_mutex_t client_lock;
-
-static void
-on_signal(int sig) {
-  uv_sem_post(&running); // sem_post is async-signal-safe
-}
-
-// The reply to our set-state request, routed here by id. The rpc_message_t views
-// are valid only for this call, so decode (which copies the bool out) now.
-static void
-on_set_state_reply(void *data, const rpc_message_t *msg) {
-  sync_switch_state_t state;
-  hrpc_error_t error;
-  int r = sync_decode_set_state_response(msg, &state, &error);
-
-  if (r == hrpc_ok) {
-    printf("[host] set-state reply: switch is %s\n", state.on ? "on" : "off");
-  } else if (r == hrpc_error_response) {
-    printf("[host] set-state error: %.*s\n", (int) error.message.len, error.message.data);
-  } else {
-    printf("[host] set-state reply decode failed (%d)\n", r);
-  }
-  fflush(stdout);
-}
-
-// Send one set-state request and track its reply by id. Called from the stdin
-// loop while the poll thread runs, so the client touches are locked. The reply
-// can only arrive after the worklet sees this write, so tracking before the
-// write is enough to catch it.
-static void
-send_set_state(bare_ipc_t *ipc, bool on) {
-  uv_mutex_lock(&client_lock);
-  uint64_t id = rpc_client_next_id(&client);
-  uv_mutex_unlock(&client_lock);
-
-  sync_switch_state_t want = {.on = on};
-  uint8_t *request;
-  size_t request_len;
-  if (sync_encode_set_state(id, &want, &request, &request_len) < 0) {
-    fprintf(stderr, "encode set-state failed\n");
-    return;
-  }
-
-  uv_mutex_lock(&client_lock);
-  rpc_client_track(&client, id, on_set_state_reply, NULL);
-  uv_mutex_unlock(&client_lock);
-
-  // A short or failed write leaves a partial frame in the pipe, desyncing every
-  // later frame, and the tracked reply never comes. Unrecoverable, so fatal.
-  int written = bare_ipc_write(ipc, request, request_len);
-  free(request);
-  if (written < 0 || (size_t) written != request_len) {
-    fprintf(stderr, "set-state write failed (%d of %zu bytes)\n", written, request_len);
-    exit(1);
-  }
-}
-
-// The worklet's send-only events, decoded by sync_hrpc_dispatch. The decoded
-// views borrow from the inbound frame, so print now.
+// The worklet's send-only events. PR 2 marshals these to the GTK thread to drive
+// the widgets; for now they are logged.
 static void
 on_new_state(void *ctx, const sync_switch_state_t *state) {
   printf("[host] new-state: switch is %s\n", state->on ? "on" : "off");
@@ -153,8 +99,6 @@ on_event(void *data, const rpc_message_t *msg) {
     .on_info = on_info,
   };
 
-  // We register no request handlers, so dispatch only ever decodes an event
-  // (no reply) or fails; it never writes the reply out-params here.
   uint8_t *reply = NULL;
   size_t reply_len = 0;
   if (sync_hrpc_dispatch(&handlers, msg, &reply, &reply_len) < 0) {
@@ -165,27 +109,23 @@ on_event(void *data, const rpc_message_t *msg) {
 
 // Runs on bare-kit's IPC poll thread (its own pthread on Linux). Drains the
 // readable bytes and feeds them to the client, which decodes complete frames and
-// invokes the matching callback. bare_ipc_read returns 0 on a successful read
-// (a zero-length read means the worklet closed its end), or a negative
-// would_block / error otherwise.
+// invokes the matching callback. A zero-length read means the worklet closed its
+// end; a decode error means the stream is unrecoverable. Both are fatal.
 static void
 on_readable(bare_ipc_poll_t *poll, int events) {
-  bare_ipc_t *ipc = bare_ipc_poll_get_ipc(poll);
+  bare_ipc_t *i = bare_ipc_poll_get_ipc(poll);
 
   while (1) {
     void *data;
     size_t len;
-    if (bare_ipc_read(ipc, &data, &len) != 0) break;
+    if (bare_ipc_read(i, &data, &len) != 0) break;
     if (len == 0) {
-      uv_sem_post(&running);
-      break;
+      fprintf(stderr, "[host] worklet closed\n");
+      exit(1);
     }
     uv_mutex_lock(&client_lock);
     int r = rpc_client_read(&client, data, len);
     uv_mutex_unlock(&client_lock);
-
-    // A decode/alloc error means the frame stream is unrecoverable; like a
-    // failed write, treat it as fatal rather than spin on the bad bytes.
     if (r < 0) {
       fprintf(stderr, "rpc read failed (%d)\n", r);
       exit(1);
@@ -193,60 +133,110 @@ on_readable(bare_ipc_poll_t *poll, int events) {
   }
 }
 
-int
-main(int argc, char **argv) {
-  uv_sem_init(&running, 0);
+// Boot the worklet and start the RPC client + poll thread. Runs once, before the
+// window is built.
+static void
+startup(GApplication *app, gpointer user_data) {
   uv_mutex_init(&client_lock);
 
-  // No SA_RESTART, so a signal interrupts the blocking fgets below instead of
-  // restarting it. uv_sem_wait retries EINTR on its own, so it stays correct.
-  struct sigaction sa = {0};
-  sa.sa_handler = on_signal;
-  sigaction(SIGINT, &sa, NULL);
-  sigaction(SIGTERM, &sa, NULL);
-
-  bare_worklet_t *worklet;
   bare_worklet_alloc(&worklet);
-
   bare_worklet_options_t options = {0};
   bare_worklet_init(worklet, &options);
 
-  uv_buf_t source = read_file(BUNDLE_PATH);
+  source = read_file(BUNDLE_PATH);
   bare_worklet_start(worklet, "/app.bundle", &source, 0, NULL);
 
-  bare_ipc_t *ipc;
   bare_ipc_alloc(&ipc);
   bare_ipc_init(ipc, worklet);
 
   rpc_client_init(&client, on_event, NULL);
 
-  bare_ipc_poll_t *poll;
-  bare_ipc_poll_alloc(&poll);
-  bare_ipc_poll_init(poll, ipc);
-  bare_ipc_poll_start(poll, bare_ipc_readable, on_readable);
+  bare_ipc_poll_alloc(&ipc_poll);
+  bare_ipc_poll_init(ipc_poll, ipc);
+  bare_ipc_poll_start(ipc_poll, bare_ipc_readable, on_readable);
+}
 
-  printf("[host] worklet up; type 'on' or 'off' (Ctrl-D or Ctrl-C to stop)\n");
-  fflush(stdout);
+// One "name: value" row in the info grid.
+static void
+add_row(GtkWidget *grid, int row, const char *name, const char *value) {
+  GtkWidget *key = gtk_label_new(name);
+  gtk_widget_set_halign(key, GTK_ALIGN_START);
+  GtkWidget *val = gtk_label_new(value);
+  gtk_widget_set_halign(val, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), key, 0, row, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), val, 1, row, 1, 1);
+}
 
-  // One set-state per stdin line. fgets returns NULL on EOF or on a signal
-  // (handlers above don't restart it), which ends the loop.
-  char line[64];
-  while (fgets(line, sizeof line, stdin) != NULL) {
-    if (strcmp(line, "on\n") == 0) send_set_state(ipc, true);
-    else if (strcmp(line, "off\n") == 0) send_set_state(ipc, false);
-    else fprintf(stderr, "unknown command (type 'on' or 'off')\n");
-  }
+static void
+activate(GtkApplication *app, gpointer user_data) {
+  GtkWidget *window = gtk_application_window_new(app);
+  gtk_window_set_title(GTK_WINDOW(window), "Bare <-> Linux");
+  gtk_window_set_default_size(GTK_WINDOW(window), 360, -1);
 
-  // stdin closed; stay up as a peer until interrupted.
-  uv_sem_wait(&running);
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+  gtk_widget_set_margin_top(box, 24);
+  gtk_widget_set_margin_bottom(box, 24);
+  gtk_widget_set_margin_start(box, 24);
+  gtk_widget_set_margin_end(box, 24);
 
-  bare_ipc_poll_destroy(poll); // also stops the poll thread and joins it
+  GtkWidget *heading = gtk_label_new("Bare <-> Linux");
+
+  GtkWidget *toggle_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  GtkWidget *toggle_label = gtk_label_new("Shared switch");
+  gtk_widget_set_hexpand(toggle_label, TRUE);
+  gtk_widget_set_halign(toggle_label, GTK_ALIGN_START);
+  GtkWidget *toggle = gtk_switch_new();
+  gtk_widget_set_halign(toggle, GTK_ALIGN_END);
+  gtk_box_append(GTK_BOX(toggle_row), toggle_label);
+  gtk_box_append(GTK_BOX(toggle_row), toggle);
+
+  GtkWidget *grid = gtk_grid_new();
+  gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
+  gtk_grid_set_column_spacing(GTK_GRID(grid), 16);
+  add_row(grid, 0, "Peers connected", "0");
+  add_row(grid, 1, "Your key", "...");
+  add_row(grid, 2, "Topic", "...");
+
+  GtkWidget *caption = gtk_label_new(
+    "Launch a second copy - flip the switch in one window and watch the other "
+    "follow. No server in between."
+  );
+  gtk_label_set_wrap(GTK_LABEL(caption), TRUE);
+  gtk_label_set_justify(GTK_LABEL(caption), GTK_JUSTIFY_CENTER);
+
+  gtk_box_append(GTK_BOX(box), heading);
+  gtk_box_append(GTK_BOX(box), toggle_row);
+  gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  gtk_box_append(GTK_BOX(box), grid);
+  gtk_box_append(GTK_BOX(box), caption);
+
+  gtk_window_set_child(GTK_WINDOW(window), box);
+  gtk_window_present(GTK_WINDOW(window));
+}
+
+static void
+on_shutdown(GApplication *app, gpointer user_data) {
+  bare_ipc_poll_destroy(ipc_poll); // also stops the poll thread and joins it
   bare_ipc_destroy(ipc);
   rpc_client_destroy(&client);
   uv_mutex_destroy(&client_lock);
   bare_worklet_terminate(worklet);
   bare_worklet_destroy(worklet);
   free(source.base);
+}
 
-  return 0;
+int
+main(int argc, char **argv) {
+  // NON_UNIQUE so each launch is its own process and peer; the default
+  // single-instance behavior would refocus the first window instead.
+  GtkApplication *app =
+    gtk_application_new("com.holepunchto.bare_linux", G_APPLICATION_NON_UNIQUE);
+  g_signal_connect(app, "startup", G_CALLBACK(startup), NULL);
+  g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+  g_signal_connect(app, "shutdown", G_CALLBACK(on_shutdown), NULL);
+
+  int status = g_application_run(G_APPLICATION(app), argc, argv);
+
+  g_object_unref(app);
+  return status;
 }
