@@ -133,27 +133,37 @@ on_readable(bare_ipc_poll_t *poll, int events) {
   }
 }
 
+// Abort if a boot step failed. Each setup call returns 0 on success; a failure
+// would leave the window over a dead worklet, so it is fatal.
+static void
+boot_step(int rc, const char *what) {
+  if (rc != 0) {
+    fprintf(stderr, "%s failed (%d)\n", what, rc);
+    exit(1);
+  }
+}
+
 // Boot the worklet and start the RPC client + poll thread. Runs once, before the
 // window is built.
 static void
 startup(GApplication *app, gpointer user_data) {
   uv_mutex_init(&client_lock);
 
-  bare_worklet_alloc(&worklet);
+  boot_step(bare_worklet_alloc(&worklet), "bare_worklet_alloc");
   bare_worklet_options_t options = {0};
-  bare_worklet_init(worklet, &options);
+  boot_step(bare_worklet_init(worklet, &options), "bare_worklet_init");
 
   source = read_file(BUNDLE_PATH);
-  bare_worklet_start(worklet, "/app.bundle", &source, 0, NULL);
+  boot_step(bare_worklet_start(worklet, "/app.bundle", &source, 0, NULL), "bare_worklet_start");
 
-  bare_ipc_alloc(&ipc);
-  bare_ipc_init(ipc, worklet);
+  boot_step(bare_ipc_alloc(&ipc), "bare_ipc_alloc");
+  boot_step(bare_ipc_init(ipc, worklet), "bare_ipc_init");
 
-  rpc_client_init(&client, on_event, NULL);
+  boot_step(rpc_client_init(&client, on_event, NULL), "rpc_client_init");
 
-  bare_ipc_poll_alloc(&ipc_poll);
-  bare_ipc_poll_init(ipc_poll, ipc);
-  bare_ipc_poll_start(ipc_poll, bare_ipc_readable, on_readable);
+  boot_step(bare_ipc_poll_alloc(&ipc_poll), "bare_ipc_poll_alloc");
+  boot_step(bare_ipc_poll_init(ipc_poll, ipc), "bare_ipc_poll_init");
+  boot_step(bare_ipc_poll_start(ipc_poll, bare_ipc_readable, on_readable), "bare_ipc_poll_start");
 }
 
 // One "name: value" row in the info grid.
