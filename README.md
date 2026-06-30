@@ -22,14 +22,14 @@ From the repo root (each step auto-detects the host arch):
 npm install
 npx bare-make generate   # fetch the runtime, link addons, pack the worklet
 npx bare-make build      # build the C host
-./build/app/bare_linux   # run it (Ctrl-C to stop)
+./build/app/bare_linux   # run it; type on/off to flip, Ctrl-C to stop
 ```
 
 The build is CMake-driven: the first `generate` downloads the prebuilt runtime (~371 MB) and caches it under `build/`, so later runs are fast.
 
-On start the host prints `[host] worklet up ...` followed by an `[host] ipc frame: N bytes` line (the worklet's initial state). Launch a second copy in another terminal; once the two find each other on the DHT - usually within a minute - each prints more `ipc frame` lines, which is the instances syncing the switch. The worklet's own `console.log` does not reach the host's stdout in this bare-kit build, so these `[host] ...` lines are how you see the channel working.
+On start the host prints `[host] worklet up; type 'on' or 'off'` and an `[host] info: key ... topic ...` line (its own peer identity). Type `on` or `off` and press enter to flip the switch; the host prints the worklet's decoded reply, e.g. `[host] set-state reply: switch is on`. Launch a second copy in another terminal; once the two find each other on the DHT - usually within a minute - you see a `[host] peers: 1` line, and flipping the switch in one prints a `[host] new-state: switch is ...` line in the other. The worklet's own `console.log` does not reach the host's stdout in this bare-kit build, so these `[host] ...` lines are how you watch the channel working.
 
-`npx bare-make test` runs the same check non-interactively - it boots the host, confirms an IPC frame arrives, and fails if none does. This is what CI runs.
+`npx bare-make test` runs a non-interactive check - it boots the host, pipes a command, and confirms the decoded reply and the startup `info` event arrive. This is what CI runs.
 
 ### Example: a Lima VM on an Apple Silicon Mac
 
