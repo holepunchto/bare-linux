@@ -6,6 +6,10 @@ set_target_properties(bare_linux PROPERTIES C_STANDARD 11)
 # supplies the real <uv.h>.
 resolve_node_module(bare-headers bare_headers WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# GTK4 is a system library, found via pkg-config (install libgtk-4-dev).
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4)
+
 target_include_directories(
   bare_linux
   PRIVATE
@@ -24,6 +28,7 @@ target_link_libraries(
     sync_hrpc
     sync_schema
     rpc_static
+    PkgConfig::GTK4
 )
 
 # Resolve libbare-kit.so and the dlopened native addons from ./lib next to the
@@ -41,11 +46,3 @@ target_link_options(bare_linux PRIVATE -Wl,--disable-new-dtags)
 target_compile_definitions(bare_linux PRIVATE BUNDLE_PATH="${CMAKE_BINARY_DIR}/app/app.bundle")
 
 add_dependencies(bare_linux app_bundle)
-
-# Smoke test: pipe `off` and confirm the stdin command drives a set-state whose
-# reply decodes, plus the startup `info` event. Timeout-bounded since the node
-# never self-exits.
-add_test(
-  NAME boot
-  COMMAND sh -c "out=$(printf 'off\n' | timeout 15 $<TARGET_FILE:bare_linux>); echo \"$out\" | grep -q 'set-state reply: switch is off' && echo \"$out\" | grep -q 'info: key '"
-)

@@ -29,9 +29,12 @@ jobs:
     name: Test / ${{ matrix.platform }}-${{ matrix.arch }}
     steps:
       - uses: holepunchto/actions/bare-base@v1
+      # GTK4 for the GUI host; pkg-config finds it during the build.
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      # Build only, like bare-macos - the GUI host needs a display to run, so CI
+      # proves it compiles rather than running it.
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
           flags: --debug
-      - run: bare-make test
