@@ -181,8 +181,15 @@ on_readable(bare_ipc_poll_t *poll, int events) {
       break;
     }
     uv_mutex_lock(&client_lock);
-    rpc_client_read(&client, data, len);
+    int r = rpc_client_read(&client, data, len);
     uv_mutex_unlock(&client_lock);
+
+    // A decode/alloc error means the frame stream is unrecoverable; like a
+    // failed write, treat it as fatal rather than spin on the bad bytes.
+    if (r < 0) {
+      fprintf(stderr, "rpc read failed (%d)\n", r);
+      exit(1);
+    }
   }
 }
 
