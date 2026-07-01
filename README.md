@@ -11,6 +11,7 @@ The peer-to-peer half is JavaScript - a Hyperswarm node plus the switch state - 
 - A Linux machine on x64 or arm64 (glibc) - the prebuilt runtime is published for those. On a Mac, use a Linux environment instead - a remote host, a local VM (Lima, UTM, Multipass, ...), or a container. A worked example using Lima is below.
 - Node 22+.
 - A C toolchain - `build-essential` and `clang`. `bare-make` brings its own CMake and Ninja, and downloads the prebuilt runtime itself, so you do not install those.
+- GTK 4 development files - `libgtk-4-dev`. The UI is GTK4, found via `pkg-config` at build time.
 
 Run `npm install` and the build inside the Linux environment, since `node_modules` holds platform-specific native binaries.
 
@@ -22,14 +23,14 @@ From the repo root (each step auto-detects the host arch):
 npm install
 npx bare-make generate   # fetch the runtime, link addons, pack the worklet
 npx bare-make build      # build the C host
-./build/app/bare_linux   # run it; type on/off to flip, Ctrl-C to stop
+./build/app/bare_linux   # opens the switch window
 ```
 
 The build is CMake-driven: the first `generate` downloads the prebuilt runtime (~371 MB) and caches it under `build/`, so later runs are fast.
 
-On start the host prints `[host] worklet up; type 'on' or 'off'` and an `[host] info: key ... topic ...` line (its own peer identity). Type `on` or `off` and press enter to flip the switch; the host prints the worklet's decoded reply, e.g. `[host] set-state reply: switch is on`. Launch a second copy in another terminal; once the two find each other on the DHT - usually within a minute - you see a `[host] peers: 1` line, and flipping the switch in one prints a `[host] new-state: switch is ...` line in the other. The worklet's own `console.log` does not reach the host's stdout in this bare-kit build, so these `[host] ...` lines are how you watch the channel working.
+A window opens with the shared switch, the number of connected peers, and this instance's public key and topic. Launch a second copy - run `./build/app/bare_linux` again, or start it on another machine on the same network. Once the two find each other on the DHT - usually within a minute - the peer count shows 1, and flipping the switch in one window flips it in the other. There is no server in between.
 
-`npx bare-make test` runs a non-interactive check - it boots the host, pipes a command, and confirms the decoded reply and the startup `info` event arrive. This is what CI runs.
+CI builds the app on x64 and arm64; it does not launch it, since a GUI needs a display.
 
 ### Example: a Lima VM on an Apple Silicon Mac
 
@@ -42,7 +43,7 @@ limactl start --name=bare --vm-type=vz --mount="$PWD:w" template:ubuntu-lts
 
 # Install the toolchain inside the VM.
 limactl shell bare sudo apt-get update
-limactl shell bare sudo apt-get install -y build-essential clang curl
+limactl shell bare sudo apt-get install -y build-essential clang curl libgtk-4-dev
 limactl shell bare bash -lc 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs'
 ```
 
