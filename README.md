@@ -30,6 +30,8 @@ The build is CMake-driven: the first `generate` downloads the prebuilt runtime (
 
 A window opens with the shared switch, the number of connected peers, and this instance's public key and topic. Launch a second copy - run `./build/app/bare_linux` again, or start it on another machine on the same network. Once the two find each other on the DHT - usually within a minute - the peer count shows 1, and flipping the switch in one window flips it in the other. There is no server in between.
 
+The switch is deliberately naive - last-writer-wins with no conflict resolution. Flip both windows at nearly the same moment, or launch a fresh peer whose default state clobbers yours, and the two can end up disagreeing with no way to say whose state is right. That divergence is the point, not a bug: convergent multi-writer state is a different building block, [Autobase](https://github.com/holepunchto/autobase), which linearizes each peer's log into one deterministic view. This example keeps the switch naive to keep the focus on embedding Bare and talking to it over a typed protocol; [bare-macos](https://github.com/holepunchto/bare-macos) walks through the divergence in full.
+
 CI builds the app on x64 and arm64; it does not launch it, since a GUI needs a display.
 
 ### Example: a Lima VM on an Apple Silicon Mac
